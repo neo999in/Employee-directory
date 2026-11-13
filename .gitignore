@@ -1,0 +1,25 @@
+# Python & Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+!.env.example
+.venv/
+venv/
+ENV/
+*.sqlite3
+*.db
+.pytest_cache/
+
+# Node & Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+// Base URL comes only from the environment (frontend/.env, or the build env in CI/CD).
+// No hardcoded fallback: a missing value is a configuration error and is surfaced as one.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
 export class ApiError extends Error {
   constructor(message, statusCode, errorType, details) {
@@ -11,6 +13,14 @@ export class ApiError extends Error {
 }
 
 export async function fetchEmployees(searchQuery = "", signal) {
+  if (!API_BASE_URL) {
+    throw new ApiError(
+      "API URL is not configured. Set VITE_API_BASE_URL in frontend/.env and restart the dev server.",
+      0,
+      "CONFIG_ERROR"
+    );
+  }
+
   const params = new URLSearchParams();
   const trimmed = searchQuery.trim();
   if (trimmed) {

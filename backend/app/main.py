@@ -1,78 +1,51 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.core.database import Base, engine, SessionLocal
+from app.core.database import Base, SessionLocal, engine
+from app.core.exceptions import register_exception_handlers
 from app.routers.employees import router as employees_router
 from app.seed import seed_database
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("employee_api")
 
-# Ensure tables are created
-Base.metadata.create_all(bind=engine)
-with SessionLocal() as db_session:
-    seed_database(db_session)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Ensure database tables are created
-    logger.info("Initializing database schema...")
+    logger.info("Ensuring database schema exists...")
     Base.metadata.create_all(bind=engine)
-    logger.info("Checking seed data...")
-    db = SessionLocal()
-    try:
-        seed_database(db)
-    finally:
-        db.close()
+    if settings.SEED_ON_STARTUP:
+        with SessionLocal() as db:
+            seed_database(db)
     yield
-    # Shutdown logic if any
-    logger.info("Application shutting down.")
+    engine.dispose()
+    logger.info("Application shut down; connection pool disposed.")
+
 
 app = FastAPI(
     title="Employee Directory API",
-    description="High-performance Employee Directory Search API built with FastAPI and SQLAlchemy",
+    description="Employee Directory Search API built with FastAPI, SQLAlchemy and MySQL",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
-# Configure CORS for frontend access
-cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins or ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Custom validation exception handler for clean, friendly error messages
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    errors = []
-    for err in exc.errors():
-        field = " -> ".join(str(loc) for loc in err.get("loc", []))
-        msg = err.get("msg", "Invalid value")
-        errors.append(f"{field}: {msg}")
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": "Request validation failed",
-            "errors": errors
-        }
-    )
+register_exception_handlers(app)
 
-# Include Routers
 app.include_router(employees_router, prefix="/api")
+
 
 @app.get("/health", tags=["Health"])
 def health_check():
-    return {
-        "status": "healthy",
-        "service": "Employee Directory API",
-        "version": "1.0.0"
-    }
+    return {"status": "healthy", "service": "Employee Directory API", "version": "1.0.0"}

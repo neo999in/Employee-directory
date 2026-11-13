@@ -1,39 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Employee } from "../types/employee";
-import { fetchEmployees, ApiError } from "../api/employeeApi";
-import { useDebounce } from "./useDebounce";
+import { fetchEmployees, ApiError } from "../api/employeeApi.js";
+import { useDebounce } from "./useDebounce.js";
 
-export interface UseEmployeeSearchResult {
-  searchQuery: string;
-  setSearchQuery: (query: string) => void;
-  debouncedQuery: string;
-  employees: Employee[];
-  totalCount: number;
-  isLoading: boolean;
-  error: ApiError | null;
-  clearSearch: () => void;
-  refresh: () => void;
-}
+export function useEmployeeSearch(debounceDelayMs = 300) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [employees, setEmployees] = useState([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-/**
- * Custom hook to manage employee search state, debouncing,
- * and API interactions cleanly outside of UI components.
- */
-export function useEmployeeSearch(debounceDelayMs: number = 300): UseEmployeeSearchResult {
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [totalCount, setTotalCount] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<ApiError | null>(null);
-
-  // Debounce the input query (e.g. typing "Rah" triggers 1 API request, not 3)
   const debouncedQuery = useDebounce(searchQuery, debounceDelayMs);
+  const abortControllerRef = useRef(null);
 
-  // AbortController ref to cancel obsolete in-flight HTTP requests
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  const loadEmployees = useCallback(async (query: string) => {
-    // Cancel previous request if still in flight
+  const loadEmployees = useCallback(async (query) => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -48,9 +27,8 @@ export function useEmployeeSearch(debounceDelayMs: number = 300): UseEmployeeSea
       const response = await fetchEmployees(query, controller.signal);
       setEmployees(response.employees);
       setTotalCount(response.count);
-    } catch (err: unknown) {
+    } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // Request was aborted because a newer keystroke/query took over; do not treat as error
         return;
       }
       if (err instanceof ApiError) {
@@ -63,14 +41,12 @@ export function useEmployeeSearch(debounceDelayMs: number = 300): UseEmployeeSea
       setEmployees([]);
       setTotalCount(0);
     } finally {
-      // Only reset loading if this was the latest active request
       if (abortControllerRef.current === controller) {
         setIsLoading(false);
       }
     }
   }, []);
 
-  // Trigger search whenever the debounced query changes
   useEffect(() => {
     loadEmployees(debouncedQuery);
 

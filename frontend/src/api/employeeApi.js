@@ -1,26 +1,7 @@
-import { EmployeeSearchResponse } from "../types/employee";
-
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
-export type ApiErrorType =
-  | "NETWORK_ERROR"
-  | "VALIDATION_ERROR"
-  | "SERVER_ERROR"
-  | "SERVICE_UNAVAILABLE"
-  | "NOT_FOUND"
-  | "UNKNOWN_ERROR";
-
 export class ApiError extends Error {
-  public readonly statusCode: number;
-  public readonly errorType: ApiErrorType;
-  public readonly details?: string[];
-
-  constructor(
-    message: string,
-    statusCode: number,
-    errorType: ApiErrorType,
-    details?: string[]
-  ) {
+  constructor(message, statusCode, errorType, details) {
     super(message);
     this.name = "ApiError";
     this.statusCode = statusCode;
@@ -29,14 +10,7 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Centralized API client service.
- * Keeps all network requests out of UI components and provides robust error parsing.
- */
-export async function fetchEmployees(
-  searchQuery: string = "",
-  signal?: AbortSignal
-): Promise<EmployeeSearchResponse> {
+export async function fetchEmployees(searchQuery = "", signal) {
   const params = new URLSearchParams();
   const trimmed = searchQuery.trim();
   if (trimmed) {
@@ -59,8 +33,8 @@ export async function fetchEmployees(
 
     if (!response.ok) {
       let errorMessage = `Server responded with status ${response.status}`;
-      let errorType: ApiErrorType = "SERVER_ERROR";
-      let details: string[] | undefined;
+      let errorType = "SERVER_ERROR";
+      let details;
 
       try {
         const errorData = await response.json();
@@ -91,8 +65,8 @@ export async function fetchEmployees(
       throw new ApiError(errorMessage, response.status, errorType, details);
     }
 
-    return (await response.json()) as EmployeeSearchResponse;
-  } catch (error: unknown) {
+    return await response.json();
+  } catch (error) {
     if (error instanceof ApiError) {
       throw error;
     }
@@ -100,11 +74,9 @@ export async function fetchEmployees(
       throw error;
     }
 
-    // Network disconnection or server offline
     throw new ApiError(
       "Unable to connect to the backend server. Please verify the backend service is running at " +
-        API_BASE_URL +
-        " and that CORS origins are properly configured.",
+        API_BASE_URL,
       0,
       "NETWORK_ERROR"
     );

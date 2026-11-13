@@ -82,10 +82,6 @@ def create_employee(
     data: EmployeeCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    Create a new employee record.
-    Demonstrates clean architecture extensibility (Backend Task 4).
-    """
     try:
         service = EmployeeService(db)
         return service.create_employee(data)

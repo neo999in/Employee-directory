@@ -81,10 +81,6 @@ class EmployeeRepository:
         return self.db.query(Employee).filter(Employee.email == email).first()
 
     def create(self, employee: Employee) -> Employee:
-        """
-        Persists a new employee to the database.
-        Demonstrates extensibility for future write endpoints.
-        """
         self.db.add(employee)
         self.db.commit()
         self.db.refresh(employee)

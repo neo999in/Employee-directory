@@ -73,6 +73,45 @@ def test_get_single_employee_and_404():
     not_found = client.get("/api/employees/999999")
     assert not_found.status_code == 404
 
+def test_boundary_pagination_errors():
+    # limit < 1
+    res1 = client.get("/api/employees?limit=0")
+    assert res1.status_code == 422
+
+    # limit > 100
+    res2 = client.get("/api/employees?limit=101")
+    assert res2.status_code == 422
+
+    # offset < 0
+    res3 = client.get("/api/employees?offset=-5")
+    assert res3.status_code == 422
+
+def test_empty_string_search_validation():
+    # Explicit empty string query parameter
+    res = client.get("/api/employees?search=")
+    assert res.status_code == 400
+    assert "Search query cannot be empty" in res.json()["detail"]
+
+def test_create_employee_validation_errors():
+    # Invalid email format
+    invalid_email = {
+        "name": "Invalid Email User",
+        "email": "not-an-email",
+        "department": "QA",
+        "designation": "Tester",
+        "date_of_joining": "2024-01-01"
+    }
+    res = client.post("/api/employees", json=invalid_email)
+    assert res.status_code == 422
+
+    # Missing required field
+    missing_field = {
+        "name": "Missing Dept User",
+        "email": "valid.email@company.com"
+    }
+    res2 = client.post("/api/employees", json=missing_field)
+    assert res2.status_code == 422
+
 def test_create_employee_extensibility():
     payload = {
         "name": "Test Integration User",

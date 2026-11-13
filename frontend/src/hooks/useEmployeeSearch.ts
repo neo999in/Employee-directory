@@ -10,7 +10,7 @@ export interface UseEmployeeSearchResult {
   employees: Employee[];
   totalCount: number;
   isLoading: boolean;
-  error: string | null;
+  error: ApiError | null;
   clearSearch: () => void;
   refresh: () => void;
 }
@@ -24,7 +24,7 @@ export function useEmployeeSearch(debounceDelayMs: number = 300): UseEmployeeSea
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
 
   // Debounce the input query (e.g. typing "Rah" triggers 1 API request, not 3)
   const debouncedQuery = useDebounce(searchQuery, debounceDelayMs);
@@ -54,11 +54,11 @@ export function useEmployeeSearch(debounceDelayMs: number = 300): UseEmployeeSea
         return;
       }
       if (err instanceof ApiError) {
-        setError(err.message);
+        setError(err);
       } else if (err instanceof Error) {
-        setError(err.message);
+        setError(new ApiError(err.message, 0, "UNKNOWN_ERROR"));
       } else {
-        setError("An unexpected error occurred while fetching employees.");
+        setError(new ApiError("An unexpected error occurred while fetching employees.", 0, "UNKNOWN_ERROR"));
       }
       setEmployees([]);
       setTotalCount(0);

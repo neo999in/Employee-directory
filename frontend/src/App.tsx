@@ -2,9 +2,10 @@ import React from "react";
 import { useEmployeeSearch } from "./hooks/useEmployeeSearch";
 import { SearchBar } from "./components/SearchBar";
 import { EmployeeList } from "./components/EmployeeList";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./App.css";
 
-export const App: React.FC = () => {
+export const AppContent: React.FC = () => {
   const {
     searchQuery,
     setSearchQuery,
@@ -21,7 +22,6 @@ export const App: React.FC = () => {
       <header className="app-header">
         <div className="header-content">
           <div className="brand">
-            <span className="brand-logo" aria-hidden="true">🏢</span>
             <div>
               <h1 className="brand-title">Employee Directory</h1>
               <p className="brand-subtitle">
@@ -60,9 +60,17 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="app-footer">
-        <p>Employee Directory System • Fast Search • Debounced API Queries</p>
+        <p>Employee Directory System | Fast Search | Debounced API Queries</p>
       </footer>
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 };
 

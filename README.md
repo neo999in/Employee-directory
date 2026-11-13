@@ -1,21 +1,20 @@
 # Employee Directory
 
-Internal tool to search and view employees by name or department.
-React (Vite) frontend, FastAPI backend, MySQL database.
+A small internal tool to search employees by **name** or **department**.
 
-## Tech Stack
+- **Frontend:** React + Vite
+- **Backend:** Python + FastAPI (SQLAlchemy)
+- **Database:** MySQL
 
-- Frontend: React 18, Vite
-- Backend: Python 3.10+, FastAPI, SQLAlchemy 2, PyMySQL
-- Database: MySQL 8
+## How it works (in one picture)
+
+```text
+Browser (React)                          Backend (FastAPI)                    MySQL
+SearchBar -> useEmployeeSearch -> api ── GET /api/employees?search=rah ──> router -> service -> repository ──> employees table
+             (debounce + cancel)                                           (HTTP)    (rules)   (SQL only)
+```
 
 ## Setup
-
-### Prerequisites
-
-- Python 3.10+
-- Node.js 18+
-- MySQL 8 running locally (or reachable over the network)
 
 ### 1. Database
 
@@ -23,183 +22,161 @@ React (Vite) frontend, FastAPI backend, MySQL database.
 mysql -u root -p < backend/schema.sql
 ```
 
-This creates the `employee_directory` database and the `employees` table.
-(The backend also runs `CREATE TABLE IF NOT EXISTS` on startup, so only the
-database itself strictly needs to exist.)
+Creates the `employee_directory` database and the `employees` table.
 
 ### 2. Backend
 
 ```bash
 cd backend
 python -m venv venv
-# Windows: .\venv\Scripts\activate    Linux/macOS: source venv/bin/activate
+# Windows: venv\Scripts\activate     Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # then fill in your MySQL user/password
-python -m uvicorn app.main:app --reload --port 8000
+cp .env.example .env              # put your MySQL user/password in DATABASE_URL
+uvicorn app.main:app --reload --port 8000
 ```
 
-On first start, 20 sample employees are seeded (disable with `SEED_ON_STARTUP=false`).
-
-- API: `http://localhost:8000/api/employees`
-- Interactive docs: `http://localhost:8000/docs`
+On first start, 20 sample employees are added. API docs: http://localhost:8000/docs
 
 ### 3. Frontend
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env        # VITE_API_BASE_URL points at the backend
+cp .env.example .env              # VITE_API_BASE_URL=http://localhost:8000/api
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open http://localhost:5173
 
 ### Tests
 
 ```bash
 cd backend
-python -m pytest tests/ -v
+python -m pytest tests -v
 ```
 
-Tests run against a temporary SQLite file (configured in `tests/conftest.py`), so they need no MySQL instance.
+The tests use a temporary SQLite file, so they don't need MySQL.
 
-## Configuration
-
-No URLs or credentials are hardcoded; everything comes from environment variables.
-
-| Variable | Where | Purpose |
-|---|---|---|
-| `DATABASE_URL` | backend | SQLAlchemy URL, e.g. `mysql+pymysql://user:pass@host:3306/employee_directory?charset=utf8mb4` (required) |
-| `CORS_ORIGINS` | backend | Comma-separated allowed frontend origins (required) |
-| `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE_SECONDS` | backend | Connection pool tuning (optional) |
-| `SEED_ON_STARTUP` | backend | Seed sample data when the table is empty (default `true`) |
-| `VITE_API_BASE_URL` | frontend | Backend API base URL (required; the UI shows a clear error if missing) |
-
-Different environments (dev / staging / prod) only need different `.env` values or build-time env vars; no code changes.
-
-## Project Structure
+## Project structure
 
 ```text
-backend/
-  app/
-    core/          config (env settings), database (engine/pool/session), exceptions (domain errors -> HTTP)
-    models/        SQLAlchemy ORM model for the employees table
-    repositories/  all SQL / data access
-    services/      business rules (validation, uniqueness), HTTP-agnostic
-    routers/       thin HTTP layer: parse params, call service
-    schemas/       Pydantic request/response models
-    main.py        app wiring: CORS, exception handlers, lifespan
-    seed.py        sample data
-  tests/
-  schema.sql       MySQL DDL
-  .env.example
-frontend/
-  src/
-    api/           API client + typed ApiError (only place that calls fetch)
-    hooks/         useDebounce, useEmployeeSearch (request logic + state)
-    components/    SearchBar, EmployeeCard, EmployeeList, ErrorBoundary (presentational)
-  .env.example
+backend/app/
+  routers/employees.py              HTTP layer: reads query params, calls the service
+  services/employee_service.py      business rules (e.g. "search can't be empty")
+  repositories/employee_repository.py  the only place with database queries
+  models/employee.py                employees table (SQLAlchemy)
+  schemas/employee.py               response shape (Pydantic)
+  core/config.py                    settings from environment variables
+  core/database.py                  connection pool + one session per request
+  core/exceptions.py                turns errors into clear JSON + status codes
+  seed.py                           sample data
+backend/schema.sql                  MySQL table definition
+
+frontend/src/
+  api/employeeApi.js                the only file that calls the backend
+  hooks/useDebounce.js              waits until the user stops typing
+  hooks/useEmployeeSearch.js        search state + API calls (loading / error / results)
+  components/SearchBar.jsx          input box (spinner while loading, clear button)
+  components/EmployeeList.jsx       shows loading (skeletons) / error / empty / results (grid or table)
+  components/EmployeeCard.jsx       one employee card (search match highlighted)
+  components/ErrorBoundary.jsx      catches unexpected UI crashes
+  App.jsx                           navbar (count, grid/list toggle, dark mode) + search + list
 ```
 
-## Database Choice and Connection
+## Database choice
 
-**MySQL** was chosen as the assignment prefers it, and because it fits the data: a single,
-well-structured relational table with uniqueness constraints and indexed lookups.
+**MySQL**, as the assignment prefers it, and the data is a simple, structured table.
 
-Table design (`backend/schema.sql`):
+The `employees` table (`backend/schema.sql`) has:
 
-- `id` INT auto-increment primary key
-- `email` has a `UNIQUE` constraint (no duplicate employees, fast lookup when creating)
-- B-tree indexes on `name` and `department`, the two searched columns
-- `utf8mb4` + `utf8mb4_unicode_ci` collation: full Unicode names, and case-insensitive
-  comparisons natively, which matters for search performance (see below)
+- `id` as the primary key, `email` as `UNIQUE`
+- **indexes on `name` and `department`**, the two columns we search
+- the `utf8mb4_unicode_ci` collation, so searches ignore case without needing `LOWER()`
 
-**Connection approach** (`backend/app/core/database.py`): SQLAlchemy engine with a connection pool
-and one session per request via a FastAPI dependency.
+**How we connect** (`backend/app/core/database.py`): a SQLAlchemy engine with a **connection pool**,
+and **one session per request**.
 
-Why this is suitable:
+Why this approach is suitable:
 
-- **Scalable**: pooled connections are reused instead of opening a new TCP + auth handshake per
-  request; `pool_size` + `max_overflow` cap total connections, so traffic spikes can't exhaust
-  MySQL's `max_connections`.
-- **Resilient**: `pool_pre_ping` detects connections MySQL has dropped (e.g. after `wait_timeout`)
-  and replaces them transparently; `pool_recycle` refreshes connections before they go stale.
-- **Safe**: all queries are parameterized through the ORM (no SQL injection); credentials only
-  live in `DATABASE_URL`; each request's session is always closed and returned to the pool, even on errors.
+- **Fast:** connections are reused instead of reconnecting on every request.
+- **Scalable:** the pool limits how many connections we open, so MySQL isn't overloaded under heavy traffic.
+- **Reliable:** `pool_pre_ping` and `pool_recycle` replace dead or old connections automatically.
+- **Safe:** queries are parameterized, which prevents SQL injection, and the credentials are only in `.env`.
 
-## How Search Performance Is Optimized
+## How search performance is optimized
 
-### Frontend: controlled requests
+**Frontend: fewer requests**
 
-- **Debounce (300 ms)**: `useDebounce` waits until the user pauses typing. Typing "Rah" sends one
-  request, not three.
-- **Cancellation**: `useEmployeeSearch` aborts the in-flight request (`AbortController`) when a new
-  one starts, so stale responses can never overwrite newer results and the browser doesn't wait on
-  outdated calls.
-- Previous results stay on screen while a new search loads, so the list updates smoothly instead of flashing.
+1. **Debounce (300 ms):** a request is sent only after the user stops typing.
+   Typing "Rah" sends **1** request, not 3.
+2. **Cancel old requests:** if a new search starts, the old request is aborted (`AbortController`),
+   so slow, outdated responses can't overwrite newer results.
+3. Old results stay on screen while new ones load, so the list doesn't flicker. Skeleton cards show only when there are no results on screen yet.
 
-### Backend: index-friendly queries
+**Backend: cheaper queries**
 
-- **Prefix matching**: search uses `name LIKE 'rah%' OR department LIKE 'rah%'`.
-  A pattern with no leading wildcard is a range scan on the B-tree index (O(log n)), while
-  `LIKE '%rah%'` would force a full table scan that gets slower as the table grows.
-  MySQL can combine both column indexes for the `OR` (index merge).
-- **No functions on indexed columns**: plain `LIKE` is used instead of `ILIKE`/`LOWER(col)`, which
-  would disable the index. Case-insensitivity comes from the `_ci` collation.
-- **Wildcards in user input are escaped**, so typing `%` or `_` can't turn a search into a full scan.
-- **Pagination** (`limit` ≤ 100, `offset`) bounds every response, and `COUNT(id)` runs in SQL rather
-  than loading rows into memory.
-- Each search runs two indexed queries (the page of rows + the total count). Both use the same
-  index range, so the count is cheap; at very large scale the count could be made optional or
-  replaced with a "has more" flag (fetch `limit + 1` rows) to save the second query.
+1. **Indexed prefix search:** `WHERE name LIKE 'rah%' OR department LIKE 'rah%'`.
+   With no `%` at the start, MySQL can use the index and doesn't need to scan the whole table, so search stays fast as the table grows.
+   (`'%rah%'` would force a full table scan.)
+2. **Only the data we need:** results are paginated (`limit` is at most 100, `offset`), and the total is counted with `COUNT()` in SQL.
+3. User input such as `%` or `_` is escaped, so it can't turn into a slow wildcard search.
 
-Trade-off: prefix search matches the *start* of a name or department ("Rah" → "Rahul Sharma",
-"Eng" → "Engineering") but not a word in the middle ("Sharma"). If that becomes a requirement, the
-scalable next step is a MySQL `FULLTEXT` index on (`name`, `department`) queried with
-`MATCH ... AGAINST` in boolean mode, rather than `%term%` scans.
+Trade-off: "Rah" finds "Rahul Sharma", but "Sharma" does not, because it isn't at the start.
+If that's needed later, the next step is a MySQL `FULLTEXT` index.
 
-## API Reference
+## API
 
-### `GET /api/employees`
+`GET /api/employees?search=rahul&limit=50&offset=0`
 
-| Param | Type | Rules |
-|---|---|---|
-| `search` | string, optional | 1–100 chars after trimming; prefix match on name or department, case-insensitive. Omit to list all. |
-| `limit` | int, optional | 1–100, default 50 |
-| `offset` | int, optional | ≥ 0, default 0 |
-
-Response `200 OK`:
+| Param | Rules |
+|---|---|
+| `search` | optional, 1–100 characters; matches the start of the name or department |
+| `limit` | 1–100, default 50 |
+| `offset` | 0 or more, default 0 |
 
 ```json
-{
-  "count": 2,
-  "employees": [
-    {
-      "id": 1,
-      "name": "Rahul Sharma",
-      "email": "rahul.sharma@company.com",
-      "department": "Engineering",
-      "designation": "Staff Software Engineer",
-      "date_of_joining": "2021-03-15"
-    }
-  ]
-}
+{ "count": 2, "employees": [ { "id": 1, "name": "Rahul Sharma", "email": "rahul.sharma@company.com",
+  "department": "Engineering", "designation": "Staff Software Engineer", "date_of_joining": "2021-03-15" } ] }
 ```
 
-### `GET /api/employees/{id}` and `POST /api/employees`
-
-Included to show the architecture extends cleanly (adding creation touched only the repository,
-service and router, one method each).
-
-### Errors
-
-All errors return JSON with a `detail` message, mapped centrally in `app/core/exceptions.py`:
+Errors always come back as `{ "detail": "message" }`:
 
 | Status | When |
 |---|---|
-| `400 Bad Request` | `search` is empty or whitespace only |
-| `404 Not Found` | Employee ID does not exist |
-| `409 Conflict` | Creating an employee with an existing email |
-| `422 Unprocessable Entity` | Invalid/out-of-range params or body (`errors` lists each problem) |
-| `503 Service Unavailable` | Database unreachable |
-| `500 Internal Server Error` | Other database errors (no internal details leaked) |
+| 400 | `search` is empty or only spaces |
+| 422 | invalid parameters (e.g. `limit=abc`, `limit=500`) |
+| 503 | the database can't be reached |
+| 500 | any other database error (internal details are not shown) |
+
+## Configuration
+
+Nothing is hardcoded. Each app reads a `.env` file; copy the `.env.example` files to create them.
+
+| Variable | App | Purpose |
+|---|---|---|
+| `DATABASE_URL` | backend | MySQL connection string |
+| `CORS_ORIGINS` | backend | frontend URL(s) allowed to call the API |
+| `VITE_API_BASE_URL` | frontend | backend API URL |
+| `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_RECYCLE_SECONDS` | backend | optional: connection pool tuning |
+| `SEED_ON_STARTUP` | backend | optional: add sample data when the table is empty (default `true`) |
+
+To run in another environment (dev, staging, prod), change these values. No code changes are needed.
+
+## Extending
+
+To add a feature such as "create employee", add one method in each layer:
+`repository.create()` → `service.create_employee()` → a `POST` route in the router.
+Nothing else has to change.
+
+## Assignment checklist
+
+| Requirement | Where |
+|---|---|
+| FE1: debounced, controlled search | `hooks/useDebounce.js`, `hooks/useEmployeeSearch.js` (debounce + abort) |
+| FE2: loading / results / no results / error | `components/EmployeeList.jsx` |
+| FE3: reusable components, no API logic in UI | `SearchBar`, `EmployeeCard`, `EmployeeList`; API calls are only in `api/` + `hooks/` |
+| FE4: API URL from env | `VITE_API_BASE_URL` in `api/employeeApi.js` |
+| BE1: MySQL table + safe, scalable connection | `schema.sql`, `core/database.py` |
+| BE2: efficient `GET /employees?search=` | `repositories/employee_repository.py` (indexed prefix search, pagination) |
+| BE3: validation + clear errors | `routers/employees.py` (param rules), `core/exceptions.py` (400/422/503/500) |
+| BE4: routers / services / repository | `routers/`, `services/`, `repositories/` |

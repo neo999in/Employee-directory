@@ -1,94 +1,29 @@
-// Base URL comes only from the environment (frontend/.env, or the build env in CI/CD).
-// No hardcoded fallback: a missing value is a configuration error and is surfaced as one.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+// The ONLY file that calls the backend.
+// The base URL comes from the environment (frontend/.env) - never hardcoded.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-export class ApiError extends Error {
-  constructor(message, statusCode, errorType, details) {
-    super(message);
-    this.name = "ApiError";
-    this.statusCode = statusCode;
-    this.errorType = errorType;
-    this.details = details;
-  }
-}
-
-export async function fetchEmployees(searchQuery = "", signal) {
+export async function fetchEmployees(search, signal) {
   if (!API_BASE_URL) {
-    throw new ApiError(
-      "API URL is not configured. Set VITE_API_BASE_URL in frontend/.env and restart the dev server.",
-      0,
-      "CONFIG_ERROR"
-    );
+    throw new Error("VITE_API_BASE_URL is not set. Add it to frontend/.env and restart.");
   }
 
   const params = new URLSearchParams();
-  const trimmed = searchQuery.trim();
-  if (trimmed) {
-    params.set("search", trimmed);
-  }
+  if (search.trim()) params.set("search", search.trim());
 
-  const queryString = params.toString();
-  const endpoint = queryString
-    ? `${API_BASE_URL}/employees?${queryString}`
-    : `${API_BASE_URL}/employees`;
-
+  let response;
   try {
-    const response = await fetch(endpoint, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-      },
-      signal,
-    });
-
-    if (!response.ok) {
-      let errorMessage = `Server responded with status ${response.status}`;
-      let errorType = "SERVER_ERROR";
-      let details;
-
-      try {
-        const errorData = await response.json();
-        if (errorData.detail) {
-          errorMessage = typeof errorData.detail === "string"
-            ? errorData.detail
-            : JSON.stringify(errorData.detail);
-        }
-        if (Array.isArray(errorData.errors)) {
-          details = errorData.errors;
-        }
-      } catch {
-        if (response.statusText) {
-          errorMessage = `${response.status} - ${response.statusText}`;
-        }
-      }
-
-      if (response.status === 400 || response.status === 422) {
-        errorType = "VALIDATION_ERROR";
-      } else if (response.status === 404) {
-        errorType = "NOT_FOUND";
-      } else if (response.status === 503) {
-        errorType = "SERVICE_UNAVAILABLE";
-      } else if (response.status >= 500) {
-        errorType = "SERVER_ERROR";
-      }
-
-      throw new ApiError(errorMessage, response.status, errorType, details);
-    }
-
-    return await response.json();
-  } catch (error) {
-    if (error instanceof ApiError) {
-      throw error;
-    }
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
-    }
-
-    throw new ApiError(
-      "Unable to connect to the backend server. Please verify the backend service is running at " +
-        API_BASE_URL,
-      0,
-      "NETWORK_ERROR"
-    );
+    response = await fetch(`${API_BASE_URL}/employees?${params}`, { signal });
+  } catch (err) {
+    if (err.name === "AbortError") throw err; // request was cancelled on purpose
+    const networkError = new Error("Cannot reach the server. Please check that the backend is running.");
+    networkError.errorType = "NETWORK_ERROR"; // lets the UI show "Connection error"
+    throw networkError;
   }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    // The backend always sends a readable message in "detail".
+    throw new Error(data.detail || `Request failed (${response.status})`);
+  }
+  return data; // { count, employees }
 }

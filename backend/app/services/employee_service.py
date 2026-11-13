@@ -2,65 +2,24 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import (
-    DuplicateEmployeeError,
-    EmployeeNotFoundError,
-    InvalidSearchQueryError,
-)
-from app.models.employee import Employee
+from app.core.exceptions import InvalidSearchQueryError
 from app.repositories.employee_repository import EmployeeRepository
-from app.schemas.employee import (
-    EmployeeCreate,
-    EmployeeResponse,
-    EmployeeSearchResponse,
-)
+from app.schemas.employee import EmployeeSearchResponse
 
 
 class EmployeeService:
-    """
-    Business logic layer. Knows nothing about HTTP: it raises domain exceptions
-    (app.core.exceptions) which are mapped to status codes centrally.
-    """
+    """Business logic layer. Knows nothing about HTTP or SQL."""
 
     def __init__(self, db: Session):
         self.repository = EmployeeRepository(db)
 
-    def search_employees(
-        self,
-        search_query: Optional[str] = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> EmployeeSearchResponse:
-        if search_query is None:
-            employees = self.repository.get_all(limit=limit, offset=offset)
-            total_count = self.repository.count_all()
-        else:
-            clean_query = search_query.strip()
-            if not clean_query:
-                raise InvalidSearchQueryError("Search query cannot be empty or only whitespace.")
-            employees = self.repository.search(clean_query, limit=limit, offset=offset)
-            total_count = self.repository.count_search(clean_query)
+    def search_employees(self, search: Optional[str], limit: int, offset: int) -> EmployeeSearchResponse:
+        if search is not None:
+            search = search.strip()
+            if not search:
+                raise InvalidSearchQueryError("Search query cannot be empty.")
 
         return EmployeeSearchResponse(
-            count=total_count,
-            employees=[EmployeeResponse.model_validate(emp) for emp in employees],
+            count=self.repository.count(search),
+            employees=self.repository.search(search, limit, offset),
         )
-
-    def get_employee_by_id(self, employee_id: int) -> EmployeeResponse:
-        employee = self.repository.get_by_id(employee_id)
-        if not employee:
-            raise EmployeeNotFoundError(f"Employee with ID {employee_id} not found.")
-        return EmployeeResponse.model_validate(employee)
-
-    def create_employee(self, data: EmployeeCreate) -> EmployeeResponse:
-        if self.repository.get_by_email(data.email):
-            raise DuplicateEmployeeError(f"Employee with email '{data.email}' already exists.")
-
-        new_employee = Employee(
-            name=data.name.strip(),
-            email=data.email.strip().lower(),
-            department=data.department.strip(),
-            designation=data.designation.strip(),
-            date_of_joining=data.date_of_joining,
-        )
-        return EmployeeResponse.model_validate(self.repository.create(new_employee))

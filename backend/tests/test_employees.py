@@ -93,46 +93,6 @@ def test_boundary_pagination_errors(client):
     assert client.get("/api/employees?offset=-5").status_code == 422
 
 
-def test_get_single_employee_and_404(client):
-    first_id = client.get("/api/employees?limit=1").json()["employees"][0]["id"]
-
-    res = client.get(f"/api/employees/{first_id}")
-    assert res.status_code == 200
-    assert res.json()["id"] == first_id
-
-    not_found = client.get("/api/employees/999999")
-    assert not_found.status_code == 404
-    assert "not found" in not_found.json()["detail"]
-
-
-def test_create_employee_validation_errors(client):
-    invalid_email = {
-        "name": "Invalid Email User",
-        "email": "not-an-email",
-        "department": "QA",
-        "designation": "Tester",
-        "date_of_joining": "2024-01-01",
-    }
-    assert client.post("/api/employees", json=invalid_email).status_code == 422
-
-    missing_field = {"name": "Missing Dept User", "email": "valid.email@company.com"}
-    assert client.post("/api/employees", json=missing_field).status_code == 422
-
-
-def test_create_employee_and_duplicate(client):
-    payload = {
-        "name": "Test Integration User",
-        "email": "test.integration@company.com",
-        "department": "Engineering",
-        "designation": "QA Tester",
-        "date_of_joining": "2024-01-15",
-    }
-    assert client.post("/api/employees", json=payload).status_code == 201
-    dup = client.post("/api/employees", json=payload)
-    assert dup.status_code == 409
-    assert "already exists" in dup.json()["detail"]
-
-
 def test_database_failure_returns_503(client, monkeypatch):
     from sqlalchemy.exc import OperationalError
 
@@ -141,7 +101,7 @@ def test_database_failure_returns_503(client, monkeypatch):
     def boom(*args, **kwargs):
         raise OperationalError("SELECT 1", {}, Exception("connection refused"))
 
-    monkeypatch.setattr(EmployeeRepository, "get_all", boom)
+    monkeypatch.setattr(EmployeeRepository, "search", boom)
     res = client.get("/api/employees")
     assert res.status_code == 503
     assert "unavailable" in res.json()["detail"]

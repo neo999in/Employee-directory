@@ -1,79 +1,44 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchEmployees, ApiError } from "../api/employeeApi.js";
+import { useEffect, useState } from "react";
+import { fetchEmployees } from "../api/employeeApi.js";
 import { useDebounce } from "./useDebounce.js";
 
-export function useEmployeeSearch(debounceDelayMs = 300) {
+// All search state + API logic lives here, so the components only render.
+export function useEmployeeSearch(debounceMs = 300) {
   const [searchQuery, setSearchQuery] = useState("");
   const [employees, setEmployees] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
-  const debouncedQuery = useDebounce(searchQuery, debounceDelayMs);
-  const abortControllerRef = useRef(null);
+  const debouncedQuery = useDebounce(searchQuery, debounceMs);
 
-  const loadEmployees = useCallback(async (query) => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
+  useEffect(() => {
+    // If a newer search starts, cancel this one so old results never overwrite new ones.
     const controller = new AbortController();
-    abortControllerRef.current = controller;
 
     setIsLoading(true);
     setError(null);
 
-    try {
-      const response = await fetchEmployees(query, controller.signal);
-      setEmployees(response.employees);
-      setTotalCount(response.count);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        return;
-      }
-      if (err instanceof ApiError) {
-        setError(err);
-      } else if (err instanceof Error) {
-        setError(new ApiError(err.message, 0, "UNKNOWN_ERROR"));
-      } else {
-        setError(new ApiError("An unexpected error occurred while fetching employees.", 0, "UNKNOWN_ERROR"));
-      }
-      setEmployees([]);
-      setTotalCount(0);
-    } finally {
-      if (abortControllerRef.current === controller) {
+    fetchEmployees(debouncedQuery, controller.signal)
+      .then((data) => {
+        setEmployees(data.employees);
+        setTotalCount(data.count);
         setIsLoading(false);
-      }
-    }
-  }, []);
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setError(err); // err.message is shown to the user
+        setEmployees([]);
+        setTotalCount(0);
+        setIsLoading(false);
+      });
 
-  useEffect(() => {
-    loadEmployees(debouncedQuery);
+    return () => controller.abort();
+  }, [debouncedQuery, retryCount]);
 
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [debouncedQuery, loadEmployees]);
+  const clearSearch = () => setSearchQuery("");
+  const refresh = () => setRetryCount((n) => n + 1);
 
-  const clearSearch = useCallback(() => {
-    setSearchQuery("");
-  }, []);
-
-  const refresh = useCallback(() => {
-    loadEmployees(debouncedQuery);
-  }, [debouncedQuery, loadEmployees]);
-
-  return {
-    searchQuery,
-    setSearchQuery,
-    debouncedQuery,
-    employees,
-    totalCount,
-    isLoading,
-    error,
-    clearSearch,
-    refresh,
-  };
+  return { searchQuery, setSearchQuery, employees, totalCount, isLoading, error, clearSearch, refresh };
 }

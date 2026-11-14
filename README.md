@@ -16,14 +16,15 @@ SearchBar -> useEmployeeSearch -> api ── GET /api/employees?search=rah ─�
 
 ## Setup
 
-### Option 1: Docker (Backend + MySQL)
+### Option 1: Docker (Full Stack: Frontend + Backend + MySQL)
 
-Run the backend and MySQL database in Docker containers:
+Run the entire application in Docker containers:
 
 ```bash
 docker compose up --build
 ```
 
+- **Frontend App:** http://localhost:5173
 - **Backend API:** http://localhost:8000
 - **Interactive API Docs:** http://localhost:8000/docs
 - **Health Check:** http://localhost:8000/health

@@ -16,7 +16,51 @@ SearchBar -> useEmployeeSearch -> api ── GET /api/employees?search=rah ─�
 
 ## Setup
 
-### 1. Database
+### Option 1: Docker (Backend + MySQL)
+
+Run the backend and MySQL database in Docker containers:
+
+```bash
+docker compose up --build
+```
+
+- **Backend API:** http://localhost:8000
+- **Interactive API Docs:** http://localhost:8000/docs
+- **Health Check:** http://localhost:8000/health
+- **MySQL Database:** `localhost:3306` (Database: `employee_directory`, User: `employee_user`, Password: `employee_pass`)
+
+The database is automatically initialized from `backend/schema.sql` and seeded with 20 sample employees on startup. Data is persisted in a named Docker volume (`db_data`).
+
+Useful Docker commands:
+```bash
+# Run in background (detached mode)
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop containers
+docker compose down
+
+# Stop and wipe database volume (fresh start)
+docker compose down -v
+```
+
+#### Hot-reload for Development (Optional)
+To enable live code changes without rebuilding, create a `docker-compose.override.yml`:
+```yaml
+services:
+  backend:
+    volumes:
+      - ./backend/app:/app/app:ro
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+```
+
+---
+
+### Option 2: Local / Manual Setup
+
+#### 1. Database
 
 ```bash
 mysql -u root -p < backend/schema.sql
@@ -24,7 +68,7 @@ mysql -u root -p < backend/schema.sql
 
 Creates the `employee_directory` database and the `employees` table.
 
-### 2. Backend
+#### 2. Backend
 
 ```bash
 cd backend
@@ -37,7 +81,7 @@ uvicorn app.main:app --reload --port 8000
 
 On first start, 20 sample employees are added. API docs: http://localhost:8000/docs
 
-### 3. Frontend
+#### 3. Frontend
 
 ```bash
 cd frontend

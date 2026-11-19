@@ -7,6 +7,9 @@ from app.repositories.employee_repository import EmployeeRepository
 from app.schemas.employee import EmployeeSearchResponse
 
 
+MIN_SEARCH_LENGTH = 2
+
+
 class EmployeeService:
     """Business logic layer. Knows nothing about HTTP or SQL."""
 
@@ -18,6 +21,9 @@ class EmployeeService:
             search = search.strip()
             if not search:
                 raise InvalidSearchQueryError("Search query cannot be empty.")
+
+            if len(search) < MIN_SEARCH_LENGTH:
+                raise InvalidSearchQueryError(f"Search query must be at least {MIN_SEARCH_LENGTH} characters.")
 
         return EmployeeSearchResponse(
             count=self.repository.count(search),

@@ -27,7 +27,7 @@ docker compose up --build
 - **Frontend App:** http://localhost:5173
 - **Backend API:** http://localhost:8000
 - **Interactive API Docs:** http://localhost:8000/docs
-- **Health Check:** http://localhost:8000/health
+- **Health Check:** http://localhost:8000/health (200 if MySQL is reachable, 503 if not)
 - **MySQL Database:** `localhost:3306` (Database: `employee_directory`, User: `employee_user`, Password: `employee_pass`)
 
 The database is automatically initialized from `backend/schema.sql` and seeded with 20 sample employees on startup. Data is persisted in a named Docker volume (`db_data`).
@@ -100,13 +100,22 @@ cd backend
 python -m pytest tests -v
 ```
 
-The tests use a temporary SQLite file, so they don't need MySQL.
+By default the tests use a temporary SQLite file (fast, no setup), which can't run FULLTEXT.
+To test against real MySQL:
+
+```bash
+docker compose -f docker-compose.test.yml up -d --wait
+cd backend
+MYSQL_TEST_URL="mysql+pymysql://root:test@127.0.0.1:3307/employee_test?charset=utf8mb4" python -m pytest tests -v
+docker compose -f docker-compose.test.yml down
+```
 
 ## Project structure
 
 ```text
 backend/app/
   routers/employees.py              HTTP layer: reads query params, calls the service
+  routers/health.py                 GET /health: checks the database connection
   services/employee_service.py      business rules (e.g. "search can't be empty")
   repositories/employee_repository.py  the only place with database queries
   models/employee.py                employees table (SQLAlchemy)
@@ -160,14 +169,19 @@ Why this approach is suitable:
 
 **Backend: cheaper queries**
 
-1. **Indexed prefix search:** `WHERE name LIKE 'rah%' OR department LIKE 'rah%'`.
-   With no `%` at the start, MySQL can use the index and doesn't need to scan the whole table, so search stays fast as the table grows.
-   (`'%rah%'` would force a full table scan.)
-2. **Only the data we need:** results are paginated (`limit` is at most 100, `offset`), and the total is counted with `COUNT()` in SQL.
-3. User input such as `%` or `_` is escaped, so it can't turn into a slow wildcard search.
+1. **Word search with FULLTEXT:** terms of 3+ characters use a `FULLTEXT(name, department)` index in boolean mode:
+   `MATCH(name, department) AGAINST ('+sharma* +eng*' IN BOOLEAN MODE)`. Every term must start a word,
+   so "Sharma" finds "Rahul Sharma" and "resources" finds "Human Resources".
+2. **Indexed prefix search for short terms:** 1-2 character terms (like "HR") are below InnoDB's minimum indexed word length (3),
+   so they use `name LIKE 'hr%' OR department LIKE 'hr%'` on the normal B-tree indexes. Short terms match the *start* of the name/department only.
+3. **Pagination:** results are paginated (`limit` is at most 100, `offset`), and the total is counted with `COUNT()` in SQL (`count` in the response).
+4. **Safe input:** the search is split into plain word tokens, so boolean operators (`+ - * " ( )`) and `%` / `_` typed by the user can't change the query.
 
-Trade-off: "Rah" finds "Rahul Sharma", but "Sharma" does not, because it isn't at the start.
-If that's needed later, the next step is a MySQL `FULLTEXT` index.
+Notes:
+- The search needs at least 2 characters (shorter returns 400; the UI just shows the full list).
+- Docker MySQL runs with `--innodb-ft-enable-stopword=OFF`, otherwise words like "will" are silently ignored by FULLTEXT. On your own MySQL set `innodb_ft_enable_stopword=OFF` before the index is built.
+- Existing databases get the FULLTEXT index added automatically at startup (`ensure_fulltext_index`); `schema.sql` includes it for new ones.
+- The SQLite used by the quick tests only emulates word-prefix matching. The real FULLTEXT queries are tested against MySQL (see Tests).
 
 ## API
 
@@ -175,20 +189,22 @@ If that's needed later, the next step is a MySQL `FULLTEXT` index.
 
 | Param | Rules |
 |---|---|
-| `search` | optional, 1–100 characters; matches the start of the name or department |
+| `search` | optional, 2–100 characters; every word must start a word in the name or department (1-2 character words match the start only) |
 | `limit` | 1–100, default 50 |
 | `offset` | 0 or more, default 0 |
 
 ```json
-{ "count": 2, "employees": [ { "id": 1, "name": "Rahul Sharma", "email": "rahul.sharma@company.com",
+{ "count": 1, "employees": [ { "id": 1, "name": "Rahul Sharma", "email": "rahul.sharma@company.com",
   "department": "Engineering", "designation": "Staff Software Engineer", "date_of_joining": "2021-03-15" } ] }
 ```
+
+`GET /health` returns `200 {"status":"healthy","database":"ok"}`, or `503 {"status":"unhealthy","database":"unreachable"}` when MySQL can't be reached.
 
 Errors always come back as `{ "detail": "message" }`:
 
 | Status | When |
 |---|---|
-| 400 | `search` is empty or only spaces |
+| 400 | `search` is empty, only spaces, or shorter than 2 characters |
 | 422 | invalid parameters (e.g. `limit=abc`, `limit=500`) |
 | 503 | the database can't be reached |
 | 500 | any other database error (internal details are not shown) |
@@ -222,6 +238,6 @@ Nothing else has to change.
 | FE3: reusable components, no API logic in UI | `SearchBar`, `EmployeeCard`, `EmployeeList`; API calls are only in `api/` + `hooks/` |
 | FE4: API URL from env | `VITE_API_BASE_URL` in `api/employeeApi.js` |
 | BE1: MySQL table + safe, scalable connection | `schema.sql`, `core/database.py` |
-| BE2: efficient `GET /employees?search=` | `repositories/employee_repository.py` (indexed prefix search, pagination) |
+| BE2: efficient `GET /employees?search=` | `repositories/employee_repository.py` (FULLTEXT + indexed prefix search, pagination) |
 | BE3: validation + clear errors | `routers/employees.py` (param rules), `core/exceptions.py` (400/422/503/500) |
 | BE4: routers / services / repository | `routers/`, `services/`, `repositories/` |

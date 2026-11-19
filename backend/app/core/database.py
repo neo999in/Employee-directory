@@ -9,7 +9,7 @@ Why this approach (SQLAlchemy engine + connection pool + one session per request
 - ORM queries are parameterized, so user input can't cause SQL injection.
 - Credentials come only from DATABASE_URL (env var), never from code.
 """
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
@@ -36,3 +36,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_fulltext_index() -> None:
+    """create_all() never alters an existing table, so add the FULLTEXT index to older MySQL databases."""
+    if engine.dialect.name != "mysql":
+        return
+    from app.models.employee import FULLTEXT_INDEX_NAME
+
+    with engine.begin() as conn:
+        exists = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                "AND table_name = 'employees' AND index_name = :n LIMIT 1"
+            ),
+            {"n": FULLTEXT_INDEX_NAME},
+        ).first()
+        if not exists:
+            conn.execute(text(f"ALTER TABLE employees ADD FULLTEXT INDEX {FULLTEXT_INDEX_NAME} (name, department)"))

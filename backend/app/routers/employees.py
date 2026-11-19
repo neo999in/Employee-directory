@@ -12,7 +12,7 @@ router = APIRouter(prefix="/employees", tags=["Employees"])
 
 @router.get("", response_model=EmployeeSearchResponse)
 def search_employees(
-    search: Optional[str] = Query(None, max_length=100, description="Start of a name or department"),
+    search: Optional[str] = Query(None, max_length=100, description="Words to find in a name or department (min 2 characters)"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),

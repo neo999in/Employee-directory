@@ -7,9 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
-from app.core.database import Base, SessionLocal, engine
+from app.core.database import Base, SessionLocal, engine, ensure_fulltext_index
 from app.core.exceptions import register_exception_handlers
 from app.routers.employees import router as employees_router
+from app.routers.health import router as health_router
 from app.seed import seed_database
 
 logger = logging.getLogger("uvicorn.error")
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI):
     for attempt in range(1, max_retries + 1):
         try:
             Base.metadata.create_all(bind=engine)  # create the employees table if it doesn't exist
+            ensure_fulltext_index()  # upgrade tables created before the FULLTEXT index existed
             break
         except OperationalError as exc:
             if attempt == max_retries:
@@ -49,9 +51,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 register_exception_handlers(app)
+app.include_router(health_router)
 app.include_router(employees_router, prefix="/api")
 
-
-@app.get("/health")
-def health():
-    return {"status": "healthy"}

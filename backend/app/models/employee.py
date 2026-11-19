@@ -1,6 +1,9 @@
-from sqlalchemy import Column, Date, Integer, String
+from sqlalchemy import Column, Date, Index, Integer, String
 
 from app.core.database import Base
+
+
+FULLTEXT_INDEX_NAME = "ft_employees_name_department"
 
 
 class Employee(Base):
@@ -14,4 +17,8 @@ class Employee(Base):
     date_of_joining = Column(Date, nullable=False)
 
     # *_ci collation makes LIKE case-insensitive without LOWER(), so the indexes still work.
-    __table_args__ = {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"}
+    __table_args__ = (
+        # FULLTEXT: finds a word anywhere in the name/department ("Sharma" -> "Rahul Sharma").
+        Index(FULLTEXT_INDEX_NAME, "name", "department", mysql_prefix="FULLTEXT"),
+        {"mysql_engine": "InnoDB", "mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"},
+    )

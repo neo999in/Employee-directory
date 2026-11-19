@@ -50,6 +50,12 @@
   border-radius: var(--radius-pill);
 }
 
+.nav-search {
+  flex: 1;
+  min-width: 0;
+  margin: 0 1.25rem;
+}
+
 .nav-actions {
   display: flex;
   align-items: center;
@@ -119,11 +125,7 @@
   flex: 1;
 }
 
-/* Toolbar & Search */
-.toolbar {
-  margin-bottom: 1.5rem;
-}
-
+/* Search */
 .search-wrap {
   position: relative;
   display: flex;
@@ -575,6 +577,17 @@ mark.hl {
 }
 
 @media (max-width: 640px) {
+  .navbar-inner {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .nav-search {
+    order: 3;
+    flex-basis: 100%;
+    margin: 0;
+  }
+
   .grid {
     grid-template-columns: 1fr;
   }

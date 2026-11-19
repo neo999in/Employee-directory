@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS employees (
   PRIMARY KEY (id),
   UNIQUE KEY uq_employees_email (email),   -- no duplicate employees; fast lookup by email
   KEY ix_employees_name (name),            -- prefix search: name LIKE 'rah%' + ORDER BY name
-  KEY ix_employees_department (department) -- prefix search: department LIKE 'eng%'
+  KEY ix_employees_department (department), -- prefix search: department LIKE 'eng%'
+  FULLTEXT KEY ft_employees_name_department (name, department) -- word search: MATCH ... AGAINST ('+sharma*' IN BOOLEAN MODE)
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;              -- case-insensitive LIKE without LOWER(), so indexes stay usable

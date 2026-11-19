@@ -55,6 +55,15 @@ export function AppContent() {
             <span className="count-tag">{totalCount}</span>
           </div>
 
+          <div className="nav-search">
+            <SearchBar
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onClear={clearSearch}
+              isLoading={isLoading && Boolean(searchQuery.trim())}
+            />
+          </div>
+
           <div className="nav-actions">
             <div className="seg-control" role="group" aria-label="View mode">
               <button
@@ -127,15 +136,6 @@ export function AppContent() {
       </header>
 
       <main className="container">
-        <div className="toolbar">
-          <SearchBar
-            value={searchQuery}
-            onChange={setSearchQuery}
-            onClear={clearSearch}
-            isLoading={isLoading && Boolean(searchQuery.trim())}
-          />
-        </div>
-
         <EmployeeList
           employees={employees}
           isLoading={isLoading}
